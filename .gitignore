@@ -1,0 +1,12 @@
+# Environment Variables
+.env
+
+# Python Cache Files (those .cpython files)
+*.cpython-*
+__pycache__/
+
+# Node Modules
+node_modules/
+
+# Next.js Build
+.next/

@@ -1,3 +1,8 @@
+"""
+mMTC (Massive Machine-Type Communication) Slice Processor
+Many devices, flexible timing, cost-effective
+"""
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import random
@@ -8,9 +13,28 @@ from collections import deque, defaultdict
 import uvicorn
 import numpy as np
 from dataclasses import dataclass
+from pydantic import BaseModel, Field
 
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ===================== PYDANTIC MODELS =====================
+
+class ProcessPacketsRequest(BaseModel):
+    """Request schema for processing packets"""
+    packet_count: int = Field(..., ge=1, le=100000)
+
+# ===================== DATACLASSES =====================
+
+@dataclass
+class QOSMetrics:
+    """QoS metrics for mMTC"""
+    latency: float
+    active_devices: int
+    success_rate: float
+
+# ===================== DEVICE REGISTRY =====================
 
 class DeviceRegistry:
     """Manages massive number of IoT devices"""
@@ -18,10 +42,10 @@ class DeviceRegistry:
     def __init__(self, max_devices: int = 100000):
         self.devices: Dict[str, dict] = {}
         self.max_devices = max_devices
-        self.packet_count_per_device: Dict[str, int] = defaultdict(int)
         self.device_last_seen: Dict[str, float] = {}
     
     def register_or_get_device(self, device_id: str) -> dict:
+        """Register new device or get existing"""
         if device_id not in self.devices:
             if len(self.devices) >= self.max_devices:
                 raise OverflowError(f"Max devices ({self.max_devices}) reached")
@@ -38,13 +62,17 @@ class DeviceRegistry:
         return self.devices[device_id]
     
     def get_active_devices(self) -> int:
+        """Get count of active devices"""
         return len(self.devices)
     
     def get_device_count_by_type(self) -> Dict[str, int]:
+        """Get device breakdown by type"""
         counts = defaultdict(int)
         for device in self.devices.values():
             counts[device["type"]] += 1
         return dict(counts)
+
+# ===================== mMTC QoS ENGINE =====================
 
 class MMTCQoSEngine:
     """QoS engine for massive machine-type communication"""
@@ -72,6 +100,7 @@ class MMTCQoSEngine:
         self.resource_utilization = 0.0
         self.last_latency = 0
         self.device_distribution: Dict[str, int] = defaultdict(int)
+        logger.info("mMTC QoS Engine initialized")
     
     def process_batch(self, packets: List[dict]) -> Dict:
         """Process large batch with device aggregation"""
@@ -80,7 +109,7 @@ class MMTCQoSEngine:
         batch_latencies = []
         batch_throughputs = []
         batch_drop_rates = []
-        devices_contacted = set()
+        devices_contacted: Set[str] = set()
         
         # Aggregate packets by device if enabled
         if self.CONFIG["aggregation_enabled"]:
@@ -184,6 +213,8 @@ class MMTCQoSEngine:
         }
         
         self.metrics_history.append(batch_stats)
+        logger.info(f"mMTC: Processed {len(results)} packets from {len(devices_contacted)} devices, Success Rate: {batch_stats['success_rate']:.2f}%")
+        
         return batch_stats
     
     def _aggregate_packets_by_device(self, packets: List[dict]) -> List[dict]:
@@ -270,6 +301,8 @@ class MMTCQoSEngine:
             "current_resource_utilization": self.resource_utilization
         }
 
+# ===================== FASTAPI APP =====================
+
 app = FastAPI(title="mMTC Slice Processor", version="1.0.0")
 
 app.add_middleware(
@@ -282,8 +315,11 @@ app.add_middleware(
 
 qos_engine = MMTCQoSEngine()
 
+# ===================== ENDPOINTS =====================
+
 @app.get("/health")
 async def health():
+    """Health check endpoint"""
     return {
         "status": "healthy",
         "slice": "mmtc",
@@ -300,10 +336,10 @@ async def health():
     }
 
 @app.post("/process")
-async def process_packets(packet_count: int = 1000):
+async def process_packets(request: ProcessPacketsRequest):
     """Process massive batch of packets"""
     try:
-        if packet_count <= 0 or packet_count > 100000:
+        if request.packet_count <= 0 or request.packet_count > 100000:
             raise ValueError("Packet count must be between 1 and 100000")
         
         packets = [
@@ -312,7 +348,7 @@ async def process_packets(packet_count: int = 1000):
                 "device_id": f"device_{random.randint(0, 10000)}",
                 "size": random.randint(100, 500)
             }
-            for i in range(packet_count)
+            for i in range(request.packet_count)
         ]
         
         result = qos_engine.process_batch(packets)
@@ -352,6 +388,8 @@ async def reset():
     global qos_engine
     qos_engine = MMTCQoSEngine()
     return {"status": "reset", "slice": "mmtc"}
+
+# ===================== RUN SERVER =====================
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8103, log_level="info")

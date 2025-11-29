@@ -1,3 +1,8 @@
+"""
+eMBB (Enhanced Mobile Broadband) Slice Processor
+High throughput, moderate latency tolerance
+"""
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import random
@@ -8,17 +13,30 @@ from collections import deque
 import uvicorn
 import numpy as np
 from dataclasses import dataclass
+from pydantic import BaseModel, Field, validator
 
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ===================== PYDANTIC MODELS =====================
+
+class ProcessPacketsRequest(BaseModel):
+    """Request schema for processing packets"""
+    packet_count: int = Field(..., ge=1, le=10000)
+
+# ===================== DATACLASSES =====================
+
 @dataclass
 class QOSMetrics:
+    """QoS metrics for eMBB"""
     latency: float
     throughput: float
     drop_rate: float
     jitter: float
     resource_utilization: float
+
+# ===================== eMBB QoS ENGINE =====================
 
 class EMBBQoSEngine:
     """QoS enforcement engine for eMBB slice"""
@@ -42,6 +60,7 @@ class EMBBQoSEngine:
         self.resource_utilization = 0.0
         self.last_latency = 0
         self.latency_jitter = 0
+        logger.info("eMBB QoS Engine initialized")
     
     def enqueue_packet(self, packet: dict) -> bool:
         """Enqueue packet with priority handling"""
@@ -50,7 +69,6 @@ class EMBBQoSEngine:
             logger.warning("eMBB queue full - dropping packet")
             return False
         
-        # Sort by priority (higher priority first)
         self.queue.append(packet)
         return True
     
@@ -68,7 +86,7 @@ class EMBBQoSEngine:
             if not self.enqueue_packet(packet):
                 continue
             
-            # Simulate processing
+            # Calculate realistic metrics
             latency = self._calculate_latency()
             throughput = self._calculate_throughput(packet.get("size", 1000))
             drop_rate = self._calculate_drop_rate()
@@ -143,14 +161,16 @@ class EMBBQoSEngine:
                 (self.processed_packets - self.qos_violations) / self.processed_packets * 100
                 if self.processed_packets > 0 else 0
             ),
-            "detailed_results": results[:100]  # Return first 100 for details
+            "detailed_results": results[:100]
         }
         
         self.metrics_history.append(batch_stats)
+        logger.info(f"eMBB: Processed {len(results)} packets, Success Rate: {batch_stats['success_rate']:.2f}%")
+        
         return batch_stats
     
     def _calculate_latency(self) -> float:
-        """Calculate realistic latency"""
+        """Calculate realistic latency for eMBB"""
         # Base processing latency
         base_latency = random.uniform(20, 100)
         
@@ -164,14 +184,14 @@ class EMBBQoSEngine:
         return min(total, self.CONFIG["max_latency"] * 1.2)
     
     def _calculate_throughput(self, packet_size: int) -> float:
-        """Calculate realistic throughput based on latency"""
+        """Calculate realistic throughput based on Shannon's theorem"""
         # Simulated bandwidth: 500-1000 Mbps for eMBB
         bandwidth = random.uniform(500, 1000)
         
         # Packet transmission time
-        transmission_time = (packet_size * 8) / (bandwidth * 1_000_000)  # seconds
+        transmission_time = (packet_size * 8) / (bandwidth * 1_000_000)
         
-        # Throughput = packet_size / (latency + transmission)
+        # Throughput calculation
         total_time = (self.last_latency / 1000) + transmission_time
         throughput = (packet_size * 8) / (total_time * 1_000_000) if total_time > 0 else bandwidth
         
@@ -217,6 +237,8 @@ class EMBBQoSEngine:
             "current_resource_utilization": self.resource_utilization
         }
 
+# ===================== FASTAPI APP =====================
+
 app = FastAPI(title="eMBB Slice Processor", version="1.0.0")
 
 app.add_middleware(
@@ -229,8 +251,11 @@ app.add_middleware(
 
 qos_engine = EMBBQoSEngine()
 
+# ===================== ENDPOINTS =====================
+
 @app.get("/health")
 async def health():
+    """Health check endpoint"""
     return {
         "status": "healthy",
         "slice": "embb",
@@ -243,10 +268,10 @@ async def health():
     }
 
 @app.post("/process")
-async def process_packets(packet_count: int = 100):
+async def process_packets(request: ProcessPacketsRequest):
     """Process packet batch"""
     try:
-        if packet_count <= 0 or packet_count > 10000:
+        if request.packet_count <= 0 or request.packet_count > 10000:
             raise ValueError("Packet count must be between 1 and 10000")
         
         # Generate dummy packets for processing
@@ -256,7 +281,7 @@ async def process_packets(packet_count: int = 100):
                 "size": random.randint(500, 2000),
                 "priority": random.randint(3, 6)
             }
-            for i in range(packet_count)
+            for i in range(request.packet_count)
         ]
         
         result = qos_engine.process_batch(packets)
@@ -287,6 +312,8 @@ async def reset():
     global qos_engine
     qos_engine = EMBBQoSEngine()
     return {"status": "reset", "slice": "embb"}
+
+# ===================== RUN SERVER =====================
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8101, log_level="info")

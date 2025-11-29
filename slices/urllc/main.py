@@ -1,3 +1,8 @@
+"""
+URLLC (Ultra-Reliable Low-Latency Communication) Slice Processor
+Extreme low latency, ultra-high reliability
+"""
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import random
@@ -8,54 +13,44 @@ from collections import deque
 import uvicorn
 import numpy as np
 from dataclasses import dataclass
-import heapq
+from pydantic import BaseModel, Field
 
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class URLLCPriorityQueue:
-    """Priority-based queue for ultra-reliable packets"""
-    
-    def __init__(self, max_size: int = 5000):
-        self.heap = []
-        self.max_size = max_size
-        self.counter = 0
-    
-    def push(self, packet: dict):
-        if len(self.heap) >= self.max_size:
-            raise OverflowError("Queue full")
-        
-        # Priority: higher value = higher priority
-        # Use counter to maintain FIFO for same priority
-        priority = -packet.get("priority", 5)  # Negate for max-heap
-        heapq.heappush(self.heap, (priority, self.counter, packet))
-        self.counter += 1
-    
-    def pop(self):
-        if not self.heap:
-            return None
-        _, _, packet = heapq.heappop(self.heap)
-        return packet
-    
-    def __len__(self):
-        return len(self.heap)
+# ===================== PYDANTIC MODELS =====================
+
+class ProcessPacketsRequest(BaseModel):
+    """Request schema for processing packets"""
+    packet_count: int = Field(..., ge=1, le=10000)
+
+# ===================== DATACLASSES =====================
+
+@dataclass
+class QOSMetrics:
+    """QoS metrics for URLLC"""
+    latency: float
+    reliability: float
+    packets_retransmitted: int
+
+# ===================== URLLC QoS ENGINE =====================
 
 class URLLCQoSEngine:
-    """Ultra-Reliable Low-Latency QoS engine"""
+    """QoS enforcement engine for URLLC slice"""
     
     CONFIG = {
-        "max_latency": 10,  # ms - ultra strict
-        "min_throughput": 50,  # Mbps
-        "max_drop_rate": 0.001,  # 0.001% - ultra reliable
-        "max_jitter": 5,  # ms
-        "queue_size": 5000,
+        "max_latency": 10,  # Strict latency requirement (ms)
+        "min_reliability": 99.99,  # 4 nines reliability
+        "max_drop_rate": 0.01,  # 0.01% maximum drop
+        "queue_size": 5000,  # Smaller queue for faster processing
         "priority_levels": 10,
-        "retry_policy": "aggressive",
-        "redundancy_enabled": True,
+        "preemption_enabled": True,  # Can preempt lower priority traffic
     }
     
     def __init__(self):
-        self.priority_queue = URLLCPriorityQueue(self.CONFIG["queue_size"])
+        self.queue: Deque = deque(maxlen=self.CONFIG["queue_size"])
+        self.priority_queue: Dict[int, Deque] = {i: deque() for i in range(self.CONFIG["priority_levels"])}
         self.processed_packets = 0
         self.dropped_packets = 0
         self.retransmitted_packets = 0
@@ -63,87 +58,79 @@ class URLLCQoSEngine:
         self.qos_violations = 0
         self.resource_utilization = 0.0
         self.last_latency = 0
-        self.redundancy_cache = {}
+        logger.info("URLLC QoS Engine initialized")
     
-    def enqueue_packet(self, packet: dict, with_redundancy: bool = True) -> bool:
-        """Enqueue with optional redundancy for reliability"""
-        try:
-            self.priority_queue.push(packet)
-            
-            # Store for redundancy
-            if with_redundancy and self.CONFIG["redundancy_enabled"]:
-                packet_id = packet.get("packet_id")
-                if packet_id:
-                    self.redundancy_cache[packet_id] = packet
-            
-            return True
-        except OverflowError:
-            self.dropped_packets += 1
-            logger.warning("URLLC queue full - critical packet dropped")
-            return False
+    def enqueue_packet(self, packet: dict) -> bool:
+        """Enqueue packet with strict priority handling"""
+        priority = packet.get("priority", 5)
+        
+        if len(self.queue) >= self.CONFIG["queue_size"]:
+            # Try to preempt lower priority packets
+            if self.CONFIG["preemption_enabled"] and priority >= 8:
+                self._preempt_lower_priority_packet()
+            else:
+                self.dropped_packets += 1
+                logger.warning("URLLC queue full - dropping packet")
+                return False
+        
+        self.priority_queue[priority].append(packet)
+        self.queue.append(packet)
+        return True
+    
+    def _preempt_lower_priority_packet(self):
+        """Remove lowest priority packet to make room"""
+        for priority in range(self.CONFIG["priority_levels"]):
+            if self.priority_queue[priority]:
+                self.priority_queue[priority].popleft()
+                self.dropped_packets += 1
+                logger.info(f"Preempted priority {priority} packet for higher priority")
+                return
     
     def process_batch(self, packets: List[dict]) -> Dict:
-        """Process with ultra-low latency guarantees"""
+        """Process batch with ultra-low latency"""
         
         results = []
         batch_latencies = []
-        batch_throughputs = []
-        batch_drop_rates = []
         
-        for packet in packets:
+        packets_to_process = min(len(packets), len(self.queue) + len(packets))
+        
+        for packet in packets[:packets_to_process]:
             if not self.enqueue_packet(packet):
-                continue
-            
-            # Pop and process
-            queued_packet = self.priority_queue.pop()
-            if not queued_packet:
                 continue
             
             # Ultra-low latency calculation
             latency = self._calculate_ultra_low_latency()
-            throughput = self._calculate_throughput(queued_packet.get("size", 100))
-            drop_rate = self._calculate_ultra_reliable_drop_rate()
-            jitter = self._calculate_jitter(latency)
-            utilization = len(self.priority_queue) / self.CONFIG["queue_size"]
+            reliability = self._calculate_reliability()
+            retransmitted = self._check_retransmission_needed(latency)
             
-            # Aggressive QoS check
+            if retransmitted:
+                self.retransmitted_packets += 1
+            
+            # Strict QoS compliance
             qos_satisfied = (
                 latency <= self.CONFIG["max_latency"] and
-                throughput >= self.CONFIG["min_throughput"] and
-                drop_rate <= self.CONFIG["max_drop_rate"] and
-                jitter <= self.CONFIG["max_jitter"]
+                reliability >= self.CONFIG["min_reliability"] and
+                not retransmitted
             )
-            
-            # If QoS violated, trigger retransmission
-            if not qos_satisfied and self.CONFIG["retry_policy"] == "aggressive":
-                self._handle_retransmission(queued_packet)
-                self.retransmitted_packets += 1
             
             if not qos_satisfied:
                 self.qos_violations += 1
             
             result = {
-                "packet_id": queued_packet.get("packet_id"),
+                "packet_id": packet.get("packet_id"),
                 "latency": latency,
-                "throughput": throughput,
-                "drop_rate": drop_rate,
-                "jitter": jitter,
+                "reliability_index": reliability,
+                "packets_retransmitted": int(retransmitted),
                 "qos_satisfied": qos_satisfied,
-                "priority": queued_packet.get("priority", 8),
-                "resource_utilization": utilization,
-                "retransmitted": not qos_satisfied
+                "priority": packet.get("priority", 5),
             }
             
             results.append(result)
             self.processed_packets += 1
-            
             batch_latencies.append(latency)
-            batch_throughputs.append(throughput)
-            batch_drop_rates.append(drop_rate)
-            
             self.last_latency = latency
-            self.resource_utilization = utilization
         
+        # Calculate batch statistics
         batch_stats = {
             "slice_type": "urllc",
             "packets_processed": len(results),
@@ -151,83 +138,74 @@ class URLLCQoSEngine:
             "packets_retransmitted": self.retransmitted_packets,
             "total_processed": self.processed_packets,
             "qos_violations": self.qos_violations,
-            "queue_length": len(self.priority_queue),
+            "queue_length": len(self.queue),
             "metrics": {
                 "latency": {
                     "min": min(batch_latencies) if batch_latencies else 0,
                     "max": max(batch_latencies) if batch_latencies else 0,
                     "avg": np.mean(batch_latencies) if batch_latencies else 0,
                     "median": np.median(batch_latencies) if batch_latencies else 0,
-                    "stdev": np.std(batch_latencies) if batch_latencies else 0,
                 },
-                "throughput": {
-                    "min": min(batch_throughputs) if batch_throughputs else 0,
-                    "max": max(batch_throughputs) if batch_throughputs else 0,
-                    "avg": np.mean(batch_throughputs) if batch_throughputs else 0,
-                },
-                "drop_rate": {
-                    "avg": np.mean(batch_drop_rates) if batch_drop_rates else 0,
-                },
+                "reliability": self._calculate_average_reliability(),
             },
-            "reliability_index": (
+            "success_rate": (
                 (self.processed_packets - self.dropped_packets) / self.processed_packets * 100
                 if self.processed_packets > 0 else 0
             ),
-            "qos_compliance_rate": (
-                (self.processed_packets - self.qos_violations) / self.processed_packets * 100
-                if self.processed_packets > 0 else 0
-            ),
+            "reliability_index": self._calculate_average_reliability(),
             "detailed_results": results[:100]
         }
         
         self.metrics_history.append(batch_stats)
+        logger.info(f"URLLC: Processed {len(results)} packets, Reliability: {batch_stats['reliability_index']:.4f}%")
+        
         return batch_stats
     
     def _calculate_ultra_low_latency(self) -> float:
-        """Calculate ultra-low latency (1-10ms range)"""
-        # Prioritize: minimal processing + minimal queueing
-        base_latency = random.uniform(0.5, 3)  # Minimal
+        """Calculate ultra-low latency for URLLC"""
+        # Prioritized transmission
+        transmission = random.uniform(0.5, 2)
         
-        queue_delay = (len(self.priority_queue) / self.CONFIG["queue_size"]) * 4
+        # Minimal propagation delay
+        propagation = random.uniform(0.1, 1)
         
-        propagation = random.uniform(2, 6)
+        # Minimal queueing (prioritized)
+        queue_delay = (len(self.queue) / self.CONFIG["queue_size"]) * 3
         
-        total = base_latency + queue_delay + propagation
+        total = transmission + propagation + queue_delay
         return min(total, self.CONFIG["max_latency"] * 1.5)
     
-    def _calculate_throughput(self, packet_size: int) -> float:
-        """Calculate throughput for URLLC"""
-        bandwidth = random.uniform(50, 150)
-        transmission_time = (packet_size * 8) / (bandwidth * 1_000_000)
-        total_time = (self.last_latency / 1000) + transmission_time
-        throughput = (packet_size * 8) / (total_time * 1_000_000) if total_time > 0 else bandwidth
-        return max(0, min(throughput, 200))
-    
-    def _calculate_ultra_reliable_drop_rate(self) -> float:
-        """Calculate ultra-low drop rate"""
-        # Almost zero drop rate - rely on redundancy if needed
-        base_rate = random.uniform(0.0001, 0.0005)
+    def _calculate_reliability(self) -> float:
+        """Calculate packet reliability percentage"""
+        base_reliability = 99.95 + random.uniform(-0.05, 0.05)
         
-        utilization = len(self.priority_queue) / self.CONFIG["queue_size"]
-        adjusted_rate = base_rate * (1 + utilization)
+        # Decrease with queue utilization
+        utilization = len(self.queue) / self.CONFIG["queue_size"]
+        adjusted_reliability = base_reliability * (1 - utilization * 0.1)
         
-        return min(adjusted_rate, 0.002)
+        return max(99.0, min(99.99, adjusted_reliability))
     
-    def _calculate_jitter(self, current_latency: float) -> float:
-        """Calculate minimal jitter"""
-        if self.last_latency == 0:
-            return 0
-        jitter = abs(current_latency - self.last_latency)
-        return min(jitter, 10)
+    def _check_retransmission_needed(self, latency: float) -> bool:
+        """Check if packet needs retransmission"""
+        # 0.5% chance of requiring retransmission
+        if random.random() < 0.005:
+            return True
+        
+        # If latency exceeds threshold significantly, mark for retransmission
+        if latency > self.CONFIG["max_latency"] * 1.3:
+            return True
+        
+        return False
     
-    def _handle_retransmission(self, packet: dict):
-        """Handle packet retransmission for failed QoS"""
-        packet_id = packet.get("packet_id")
-        if packet_id and packet_id in self.redundancy_cache:
-            try:
-                self.priority_queue.push(self.redundancy_cache[packet_id])
-            except OverflowError:
-                logger.error(f"Cannot retransmit packet {packet_id} - queue full")
+    def _calculate_average_reliability(self) -> float:
+        """Calculate average reliability from history"""
+        if len(self.metrics_history) == 0:
+            return 99.99
+        
+        recent = list(self.metrics_history)[-5:]
+        reliability_values = [m["metrics"]["reliability"] for m in recent if "reliability" in m["metrics"]]
+        
+        return np.mean(reliability_values) if reliability_values else 99.99
     
     def get_statistics(self) -> Dict:
         """Get comprehensive statistics"""
@@ -240,18 +218,20 @@ class URLLCQoSEngine:
             "slice_type": "urllc",
             "total_packets_processed": self.processed_packets,
             "total_packets_dropped": self.dropped_packets,
-            "total_packets_retransmitted": self.retransmitted_packets,
-            "queue_length": len(self.priority_queue),
+            "total_retransmitted": self.retransmitted_packets,
+            "queue_length": len(self.queue),
             "queue_capacity": self.CONFIG["queue_size"],
-            "reliability_index": (
+            "success_rate": (
                 (self.processed_packets - self.dropped_packets) / self.processed_packets * 100
                 if self.processed_packets > 0 else 0
             ),
+            "reliability_index": self._calculate_average_reliability(),
             "qos_violations": self.qos_violations,
             "recent_metrics": recent_metrics,
-            "current_resource_utilization": self.resource_utilization,
-            "redundancy_cache_size": len(self.redundancy_cache)
+            "current_resource_utilization": self.resource_utilization
         }
+
+# ===================== FASTAPI APP =====================
 
 app = FastAPI(title="URLLC Slice Processor", version="1.0.0")
 
@@ -265,33 +245,38 @@ app.add_middleware(
 
 qos_engine = URLLCQoSEngine()
 
+# ===================== ENDPOINTS =====================
+
 @app.get("/health")
 async def health():
+    """Health check endpoint"""
     return {
         "status": "healthy",
         "slice": "urllc",
         "timestamp": datetime.now().isoformat(),
         "queue_status": {
-            "length": len(qos_engine.priority_queue),
+            "length": len(qos_engine.queue),
             "capacity": qos_engine.CONFIG["queue_size"],
-            "utilization": len(qos_engine.priority_queue) / qos_engine.CONFIG["queue_size"] * 100
-        }
+            "utilization": len(qos_engine.queue) / qos_engine.CONFIG["queue_size"] * 100
+        },
+        "reliability": qos_engine._calculate_average_reliability()
     }
 
 @app.post("/process")
-async def process_packets(packet_count: int = 100):
-    """Process ultra-reliable packets"""
+async def process_packets(request: ProcessPacketsRequest):
+    """Process packet batch with ultra-low latency"""
     try:
-        if packet_count <= 0 or packet_count > 5000:
-            raise ValueError("Packet count must be between 1 and 5000")
+        if request.packet_count <= 0 or request.packet_count > 10000:
+            raise ValueError("Packet count must be between 1 and 10000")
         
+        # Generate dummy packets for processing
         packets = [
             {
                 "packet_id": f"urllc_{i}",
                 "size": random.randint(50, 300),
                 "priority": random.randint(8, 10)
             }
-            for i in range(packet_count)
+            for i in range(request.packet_count)
         ]
         
         result = qos_engine.process_batch(packets)
@@ -322,6 +307,8 @@ async def reset():
     global qos_engine
     qos_engine = URLLCQoSEngine()
     return {"status": "reset", "slice": "urllc"}
+
+# ===================== RUN SERVER =====================
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8102, log_level="info")
