@@ -1,12 +1,18 @@
-# Environment Variables
 .env
 
-# Python Cache Files (those .cpython files)
 *.cpython-*
-__pycache__/
+**/__pycache__/
 
-# Node Modules
-node_modules/
+**/venv/
+**/venv1/
+**/venv2/
+**/venv3/
+**/venv4/
+**/venv5/
+**/.venv/
 
-# Next.js Build
-.next/
+**/node_modules/
+**/.next/
+
+.DS_Store
+Thumbs.db
