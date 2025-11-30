@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pdc_backend
+
+---
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: frontend_and_scheduler
+
+
+---
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: slices

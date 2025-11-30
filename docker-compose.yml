@@ -1,0 +1,144 @@
+version: "3.9"
+
+services:
+  urllc_slice:
+    build:
+      context: ./slices/urllc
+      dockerfile: Dockerfile
+    container_name: "urllc_slice_cont"
+    ports:
+      - "7000:7000"
+    restart: always
+    networks:
+      - network_slicing_nw
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:7000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+
+  mmtc_slice:
+    build:
+      context: ./slices/mmtc
+      dockerfile: Dockerfile
+    container_name: "mmtc_slice_cont"
+    ports:
+      - "6000:6000"
+    restart: always
+    networks:
+      - network_slicing_nw
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  eemb_slice:
+    build:
+      context: ./slices/eemb
+      dockerfile: Dockerfile
+    container_name: "eemb_slice_cont"
+    ports:
+      - "5010:5010"
+    restart: always
+    networks:
+      - network_slicing_nw
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5010/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+
+  scheduler:
+    build:
+      context: ./scheduler
+      dockerfile: Dockerfile
+    container_name: "scheduler_cont"
+    ports:
+      - "5000:5000"
+    restart: always
+    networks:
+      - network_slicing_nw
+    depends_on:
+      - urllc_slice
+      - mmtc_slice
+      - eemb_slice
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: "frontend_cont"
+    ports:
+      - "3000:3000"
+    restart: always
+    networks:
+      - network_slicing_nw
+    depends_on:
+      - scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+
+  backend :
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: "backend_cont"
+    ports:
+      - "8000:8000"
+    restart: always
+    networks:
+      - network_slicing_nw
+    depends_on:
+      - scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  backend_db:
+    image: mysql:9.0
+    container_name: "backend_db_cont"   
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: backend_db
+      MYSQL_USER: backend_user
+      MYSQL_PASSWORD: backend_password
+    volumes:
+      - backend_db_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    restart: always 
+    networks:
+      - network_slicing_nw
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u backend_user -pbackend_password || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  network_slicing_nw:
+    driver: bridge
+volumes:
+  backend_db_data: 

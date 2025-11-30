@@ -1,0 +1,9 @@
+kind: kustomise.config.k8s.io/v1beta1
+metadata:
+  name: base
+resources:
+  - namespace.yaml
+  - ingress.yaml
+  - pvc.yaml
+
+namespace: pdc-backend
