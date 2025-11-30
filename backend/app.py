@@ -114,25 +114,50 @@ class ConnectionManager:
 sim_manager = SimulationManager()
 conn_manager = ConnectionManager()
 
-# ===================== LIFESPAN EVENT =====================
+# ===================== SLICE HOST MAPPING =====================
+
+# These names must match docker-compose service names
+SLICE_HOSTS = {
+    "embb": "embb_slice",
+    "urllc": "urllc_slice",
+    "mmtc": "mmtc_slice",
+}
+
+# ===================== LIFESPAN EVENT (WITH RETRY) =====================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events"""
+    """Startup and shutdown events with Database Retry Logic"""
     logger.info("Backend starting...")
     
-    # Initialize database on startup
-    db_ready = init_db()
-    if db_ready:
-        logger.info("Database initialized successfully")
-    else:
-        logger.error("Failed to initialize database")
+    # Retry parameters
+    max_retries = 10
+    retry_interval = 3  # seconds
+    db_ready = False
+
+    # Retry loop for initial connection
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Attempting database connection ({attempt + 1}/{max_retries})...")
+            if init_db():
+                db_ready = True
+                logger.info("Database initialized successfully")
+                break
+        except Exception as e:
+            logger.warning(f"Database init failed on attempt {attempt + 1}: {str(e)}")
+        
+        # Wait before next retry (unless it's the last attempt)
+        if attempt < max_retries - 1:
+            await asyncio.sleep(retry_interval)
     
-    # Test database connection
+    if not db_ready:
+        logger.error("CRITICAL: Failed to initialize database after multiple attempts.")
+    
+    # Test connection one last time
     if test_db_connection():
         logger.info("Database connection verified")
     else:
-        logger.warning("Database connection failed")
+        logger.warning("Database connection failed verification")
     
     yield
     
@@ -182,10 +207,11 @@ async def create_simulation(
 ):
     """Create a new simulation"""
     try:
-        logger.info(f"Creating simulation with config: {request.dict()}")
+        # FIXED: Use model_dump() instead of dict() for Pydantic V2
+        config_dict = request.model_dump()
+        logger.info(f"Creating simulation with config: {config_dict}")
         
         # Create in-memory simulation
-        config_dict = request.dict()
         simulation = await sim_manager.create_simulation(config_dict)
         
         # Save to database
@@ -203,7 +229,8 @@ async def create_simulation(
         
         logger.info(f"Simulation {simulation.simulation_id} created successfully")
         
-        return SimulationResponse.from_orm(db_simulation)
+        # FIXED: Use model_validate() instead of from_orm()
+        return SimulationResponse.model_validate(db_simulation)
     
     except Exception as e:
         logger.error(f"Error creating simulation: {e}")
@@ -237,7 +264,9 @@ async def start_simulation(
         task.add_done_callback(sim_manager.active_tasks.discard)
         
         logger.info(f"Simulation {simulation_id} started")
-        return SimulationResponse.from_orm(db_sim)
+        
+        # FIXED: Use model_validate()
+        return SimulationResponse.model_validate(db_sim)
     
     except Exception as e:
         logger.error(f"Error starting simulation: {e}")
@@ -266,7 +295,9 @@ async def stop_simulation(
             db.commit()
         
         logger.info(f"Simulation {simulation_id} stopped")
-        return SimulationResponse.from_orm(db_sim)
+        
+        # FIXED: Use model_validate()
+        return SimulationResponse.model_validate(db_sim)
     
     except Exception as e:
         logger.error(f"Error stopping simulation: {e}")
@@ -283,7 +314,8 @@ async def get_simulation(
         if not db_sim:
             raise HTTPException(status_code=404, detail="Simulation not found")
         
-        return SimulationResponse.from_orm(db_sim)
+        # FIXED: Use model_validate()
+        return SimulationResponse.model_validate(db_sim)
     
     except Exception as e:
         logger.error(f"Error fetching simulation: {e}")
@@ -307,7 +339,7 @@ async def get_simulation_history(
         simulations = query.limit(limit).offset(offset).all()
         
         return SimulationHistoryResponse(
-            simulations=[SimulationResponse.from_orm(sim) for sim in simulations],
+            simulations=[SimulationResponse.model_validate(sim) for sim in simulations],
             total_count=total_count
         )
     
@@ -341,7 +373,8 @@ async def save_metrics(
         db.commit()
         db.refresh(db_metrics)
         
-        return MetricsResponse.from_orm(db_metrics)
+        # FIXED: Use model_validate()
+        return MetricsResponse.model_validate(db_metrics)
     
     except Exception as e:
         logger.error(f"Error saving metrics: {e}")
@@ -363,7 +396,7 @@ async def get_simulation_metrics(
         metrics = query.limit(limit).offset(offset).all()
         
         return MetricsHistoryResponse(
-            metrics=[MetricsResponse.from_orm(m) for m in metrics],
+            metrics=[MetricsResponse.model_validate(m) for m in metrics],
             total_count=total_count
         )
     
@@ -398,7 +431,8 @@ async def save_slice_metrics(
         db.commit()
         db.refresh(db_slice_metrics)
         
-        return SliceMetricsResponse.from_orm(db_slice_metrics)
+        # FIXED: Use model_validate()
+        return SliceMetricsResponse.model_validate(db_slice_metrics)
     
     except Exception as e:
         logger.error(f"Error saving slice metrics: {e}")
@@ -426,7 +460,7 @@ async def get_slice_metrics(
         metrics = query.limit(limit).offset(offset).all()
         
         return SliceMetricsHistoryResponse(
-            slice_metrics=[SliceMetricsResponse.from_orm(m) for m in metrics],
+            slice_metrics=[SliceMetricsResponse.model_validate(m) for m in metrics],
             total_count=total_count
         )
     
@@ -578,7 +612,7 @@ async def run_simulation_loop(simulation_id: str, db: Session):
                     # Process results
                     for result in results:
                         if isinstance(result, Exception):
-                            logger.error(f"Error: {result}")
+                            logger.error(f"Slice connection error: {result}")
                             continue
                         
                         if result:
@@ -638,9 +672,16 @@ async def process_slice_traffic(session, slice_type: str, port: int, packet_coun
             for i in range(packet_count)
         ]
         
-        url = f"http://localhost:{port}/process"
+        # IMPORTANT: use Docker service name instead of localhost
+        host = SLICE_HOSTS.get(slice_type)
+        if not host:
+            logger.error(f"No host configured for slice_type='{slice_type}'")
+            return None
+
+        url = f"http://{host}:{port}/process"
+
         async with session.post(
-            url, 
+            url,
             json={"packet_count": packet_count, "packets": packets},  # Send actual packets
             timeout=aiohttp.ClientTimeout(total=3)
         ) as resp:
@@ -648,9 +689,12 @@ async def process_slice_traffic(session, slice_type: str, port: int, packet_coun
                 data = await resp.json()
                 data["slice_type"] = slice_type
                 return data
+            else:
+                logger.error(f"{slice_type} returned status {resp.status}")
     except Exception as e:
-        logger.error(f"Error from {slice_type}: {e}")
+        logger.error(f"Error from {slice_type} at {url}: {e}")
     return None
+
 # ===================== RUN SERVER =====================
 
 if __name__ == "__main__":

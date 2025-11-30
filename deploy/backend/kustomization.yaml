@@ -1,0 +1,9 @@
+apiVersion: kustomise.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml 
+  - service.yaml
+  - hpa-backend.yaml
+  - configmap.yaml
+  - secret.yaml
+namespace: pdc_backend

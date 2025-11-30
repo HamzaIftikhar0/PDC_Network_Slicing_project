@@ -1,0 +1,192 @@
+version: "3.9"
+
+services:
+  # ============================
+  # MySQL Database
+  # ============================
+  backend_db:
+    image: mysql:8.0
+    container_name: "backend_db_cont"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: 5g_simulator
+    volumes:
+      - backend_db_data:/var/lib/mysql
+    ports:  
+      - "3307:3306" # Maps host 3307 to container 3306 to avoid conflicts if you have local MySQL
+    restart: always
+    networks:
+      - network_slicing_nw
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ============================
+  # Backend API
+  # ============================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: "backend_cont"
+    ports:
+      - "8000:8000"
+    restart: always
+    networks:
+      - network_slicing_nw
+    depends_on:
+      backend_db:
+        condition: service_healthy
+    # Mount code for hot-reloading
+    volumes:
+      - ./backend:/app
+    environment:
+      MYSQL_HOST: backend_db
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      MYSQL_DATABASE: 5g_simulator
+      MYSQL_PORT: 3306
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 8000
+    # FIXED: Uses Python for healthcheck (no curl required)
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ============================
+  # eMBB Slice
+  # ============================
+  embb_slice:
+    build:
+      context: ./slices/embb
+      dockerfile: Dockerfile
+    container_name: "embb_slice_cont"
+    ports:
+      - "8101:8101"
+    restart: always
+    networks:
+      - network_slicing_nw
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8101/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ============================
+  # URLLC Slice
+  # ============================
+  urllc_slice:
+    build:
+      context: ./slices/urllc
+      dockerfile: Dockerfile
+    container_name: "urllc_slice_cont"
+    ports:
+      - "8102:8102"
+    restart: always
+    networks:
+      - network_slicing_nw
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8102/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ============================
+  # mMTC Slice
+  # ============================
+  mmtc_slice:
+    build:
+      context: ./slices/mmtc
+      dockerfile: Dockerfile
+    container_name: "mmtc_slice_cont"
+    ports:
+      - "8103:8103"
+    restart: always
+    networks:
+      - network_slicing_nw
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8103/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ============================
+  # Scheduler
+  # ============================
+  scheduler:
+    build:
+      context: ./scheduler
+      dockerfile: Dockerfile
+    container_name: "scheduler_cont"
+    ports:
+      - "5000:5000"
+    restart: always
+    networks:
+      - network_slicing_nw
+    depends_on:
+      backend:
+        condition: service_healthy
+      embb_slice:
+        condition: service_healthy
+      urllc_slice:
+        condition: service_healthy
+      mmtc_slice:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ============================
+  # Frontend
+  # ============================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: "frontend_cont"
+    working_dir: /app
+    command: ["npm", "run", "dev"]
+    ports:
+      - "3000:3000"
+    restart: always
+    networks:
+      - network_slicing_nw
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./frontend:/app
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+networks:
+  network_slicing_nw:
+    driver: bridge
+
+volumes:
+  backend_db_data:

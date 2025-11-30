@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: pdc_backend
+data:
+  # Connection details for the backend to find the database
+  MYSQL_HOST: "backend_db"
+  MYSQL_USER: "root"
+  MYSQL_DATABASE: "5g_simulator"
+  BACKEND_PORT: "8000"
