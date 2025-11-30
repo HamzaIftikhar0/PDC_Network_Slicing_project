@@ -107,7 +107,7 @@ class SliceProfile:
             "name": "Ultra-Reliable Low-Latency Communication",
             "description": "Low latency, extremely high reliability",
             "packet_size_range": (50, 300),
-            "priority_range": (8, 10),
+            "priority_range": (7, 9),
             "bandwidth_range": (10, 100),
             "latency_range": (1, 10),
             "loss_tolerance_range": (0.001, 0.01),

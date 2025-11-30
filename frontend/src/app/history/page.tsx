@@ -1,17 +1,43 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import SimulationHistory from '../components/SimulationHistory';
 
 export default function HistoryPage() {
+  const [isOffline, setIsOffline] = useState(false);
+  const [alertVisible, setAlertVisible] = useState(true);
+
+  useEffect(() => {
+    // Check initial connectivity
+    setIsOffline(!navigator.onLine);
+
+    // Listen for online/offline events
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const handleSelectSimulation = (simId: string) => {
     console.log('Selected simulation:', simId);
+    
+    if (isOffline) {
+      console.warn('Offline: Cannot fetch simulation details');
+      alert('Cannot fetch simulation details while offline. Please check your connection.');
+      return;
+    }
+
     // Fetch simulation details
     fetch(`http://localhost:8000/simulation/${simId}`)
       .then(res => res.json())
       .then(data => {
         console.log('Simulation details:', data);
-        // You can store this in context or pass to other components
         localStorage.setItem('selectedSimulation', JSON.stringify(data));
       })
       .catch(error => console.error('Error fetching simulation:', error));
@@ -19,6 +45,28 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-8">
+      {/* Service Status Alert - ADD THIS */}
+      {isOffline && alertVisible && (
+        <div className="animate-fade-in rounded-lg border border-red-500/50 bg-red-900/30 p-4 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="text-red-400 text-xl mt-0.5">⚠️</span>
+            <div>
+              <h3 className="font-semibold text-red-300 mb-1">Service Status: Offline</h3>
+              <p className="text-sm text-red-200/80">
+                You are currently offline. Some features like fetching simulation details may not work. Please check your internet connection.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setAlertVisible(false)}
+            className="text-red-300 hover:text-red-200 transition-colors flex-shrink-0"
+            aria-label="Dismiss alert"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="animate-fade-in">
         <h1 className="text-4xl font-black text-purple-400 mb-2">Simulation History</h1>

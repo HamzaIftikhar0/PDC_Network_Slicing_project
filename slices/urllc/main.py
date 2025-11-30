@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 class ProcessPacketsRequest(BaseModel):
     """Request schema for processing packets"""
     packet_count: int = Field(..., ge=1, le=10000)
+    packets: List[dict] = Field(default=[])
 
 # ===================== DATACLASSES =====================
 
@@ -266,15 +267,12 @@ async def health():
 async def process_packets(request: ProcessPacketsRequest):
     """Process packet batch with ultra-low latency"""
     try:
-        if request.packet_count <= 0 or request.packet_count > 10000:
-            raise ValueError("Packet count must be between 1 and 10000")
-        
-        # Generate dummy packets for processing
-        packets = [
+        # Use provided packets or generate dummy ones
+        packets = request.packets if request.packets else [
             {
                 "packet_id": f"urllc_{i}",
                 "size": random.randint(50, 300),
-                "priority": random.randint(8, 10)
+                "priority": random.randint(7, 9)
             }
             for i in range(request.packet_count)
         ]

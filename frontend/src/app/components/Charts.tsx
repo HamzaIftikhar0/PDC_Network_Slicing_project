@@ -35,11 +35,18 @@ export default function Charts({ metricsHistory }: ChartsProps) {
 
   // Slice-specific data
   const sliceData = metricsHistory.map((metric, idx) => ({
-    time: idx,
-    embb_latency: metric.slice_metrics?.embb?.metrics?.latency?.avg || 0,
-    urllc_latency: metric.slice_metrics?.urllc?.metrics?.latency?.avg || 0,
-    mmtc_latency: metric.slice_metrics?.mmtc?.metrics?.latency?.avg || 0,
-  }));
+  time: idx,
+  embb_latency: metric.slice_metrics?.embb?.metrics?.latency?.avg || 0,
+  urllc_latency: metric.slice_metrics?.urllc?.metrics?.latency?.avg || 0,
+  mmtc_latency: metric.slice_metrics?.mmtc?.metrics?.latency?.avg || 0,
+  // NEW: Queue lengths
+  embb_queue: metric.slice_metrics?.embb?.queue_length || 0,
+  urllc_queue: metric.slice_metrics?.urllc?.queue_length || 0,
+  mmtc_queue: metric.slice_metrics?.mmtc?.queue_length || 0,
+  // NEW: Special metrics
+  urllc_retransmitted: metric.slice_metrics?.urllc?.packets_retransmitted || 0,
+  mmtc_aggregated: metric.slice_metrics?.mmtc?.packets_aggregated || 0,
+}));
 
   const sliceDropData = metricsHistory.map((metric, idx) => ({
     time: idx,
@@ -183,6 +190,44 @@ export default function Charts({ metricsHistory }: ChartsProps) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+      {/* NEW CHART 7: Queue Lengths Comparison */}
+<div className="card bg-slate-900/60 border-purple-500/30">
+  <h3 className="text-xl font-bold text-purple-300 mb-4">Queue Lengths Over Time</h3>
+  <ResponsiveContainer width="100%" height={300}>
+    <LineChart data={sliceData}>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.1)" />
+      <XAxis dataKey="time" stroke="rgba(148, 163, 184, 0.5)" />
+      <YAxis stroke="rgba(148, 163, 184, 0.5)" />
+      <Tooltip 
+        contentStyle={{ background: '#1e293b', border: '1px solid rgba(168, 85, 247, 0.3)' }}
+        labelStyle={{ color: '#f1f5f9' }}
+      />
+      <Legend />
+      <Line type="monotone" dataKey="embb_queue" stroke="#3b82f6" dot={false} strokeWidth={2} name="eMBB Queue" />
+      <Line type="monotone" dataKey="urllc_queue" stroke="#ef4444" dot={false} strokeWidth={2} name="URLLC Queue" />
+      <Line type="monotone" dataKey="mmtc_queue" stroke="#10b981" dot={false} strokeWidth={2} name="mMTC Queue" />
+    </LineChart>
+  </ResponsiveContainer>
+</div>
+
+{/* NEW CHART 8: Retransmission & Aggregation */}
+<div className="card bg-slate-900/60 border-purple-500/30">
+  <h3 className="text-xl font-bold text-purple-300 mb-4">Special Metrics</h3>
+  <ResponsiveContainer width="100%" height={300}>
+    <LineChart data={sliceData}>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.1)" />
+      <XAxis dataKey="time" stroke="rgba(148, 163, 184, 0.5)" />
+      <YAxis stroke="rgba(148, 163, 184, 0.5)" />
+      <Tooltip 
+        contentStyle={{ background: '#1e293b', border: '1px solid rgba(168, 85, 247, 0.3)' }}
+        labelStyle={{ color: '#f1f5f9' }}
+      />
+      <Legend />
+      <Line type="monotone" dataKey="urllc_retransmitted" stroke="#ef4444" dot={false} strokeWidth={2} name="URLLC Retransmitted" />
+      <Line type="monotone" dataKey="mmtc_aggregated" stroke="#10b981" dot={false} strokeWidth={2} name="mMTC Aggregated" />
+    </LineChart>
+  </ResponsiveContainer>
+</div>
     </div>
   );
 }

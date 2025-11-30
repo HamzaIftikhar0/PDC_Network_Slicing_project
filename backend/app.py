@@ -628,8 +628,22 @@ async def run_simulation_loop(simulation_id: str, db: Session):
 async def process_slice_traffic(session, slice_type: str, port: int, packet_count: int):
     """Get metrics from slice"""
     try:
+        # Generate packets for this slice
+        packets = [
+            {
+                "packet_id": f"{slice_type}_{i}",
+                "size": 100 + i % 200,
+                "priority": 5 + i % 5
+            }
+            for i in range(packet_count)
+        ]
+        
         url = f"http://localhost:{port}/process"
-        async with session.post(url, json={"packet_count": packet_count}, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+        async with session.post(
+            url, 
+            json={"packet_count": packet_count, "packets": packets},  # Send actual packets
+            timeout=aiohttp.ClientTimeout(total=3)
+        ) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 data["slice_type"] = slice_type
@@ -637,7 +651,6 @@ async def process_slice_traffic(session, slice_type: str, port: int, packet_coun
     except Exception as e:
         logger.error(f"Error from {slice_type}: {e}")
     return None
-
 # ===================== RUN SERVER =====================
 
 if __name__ == "__main__":

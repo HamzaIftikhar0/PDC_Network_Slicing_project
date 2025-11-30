@@ -1,11 +1,21 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, Activity, TrendingUp, Zap, Radio, Network, Download} from 'lucide-react';
-import Charts from './components/Charts';
-import ComparisonView from './components/ComparisonView';
-import ExportButtons from './components/ExportButtons';
-import SimulationHistory from './components/SimulationHistory';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Play,
+  Pause,
+  RotateCcw,
+  Activity,
+  TrendingUp,
+  Zap,
+  Radio,
+  Network,
+  Download,
+} from "lucide-react";
+import Charts from "./components/Charts";
+import ComparisonView from "./components/ComparisonView";
+import ExportButtons from "./components/ExportButtons";
+import SimulationHistory from "./components/SimulationHistory";
 
 interface MetricsData {
   timestamp: string;
@@ -19,7 +29,7 @@ interface SimulationState {
   simulation_id: string | null;
   isRunning: boolean;
   metrics: MetricsData | null;
-  connectionStatus: 'connected' | 'disconnected' | 'connecting';
+  connectionStatus: "connected" | "disconnected" | "connecting";
   metricsHistory: MetricsData[];
 }
 
@@ -28,14 +38,16 @@ export default function Dashboard() {
     simulation_id: null,
     isRunning: false,
     metrics: null,
-    connectionStatus: 'disconnected',
+    connectionStatus: "disconnected",
     metricsHistory: [],
   });
 
   const [trafficVolume, setTrafficVolume] = useState(5000);
   const [duration, setDuration] = useState(120);
-  const [pattern, setPattern] = useState('wave');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'analytics' | 'history' | 'comparison' >('dashboard');
+  const [pattern, setPattern] = useState("wave");
+  const [activeTab, setActiveTab] = useState<
+    "dashboard" | "analytics" | "history" | "comparison"
+  >("dashboard");
   const ws = useRef<WebSocket | null>(null);
 
   // Connect WebSocket
@@ -44,17 +56,19 @@ export default function Dashboard() {
       ws.current.close();
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws.current = new WebSocket(`${protocol}//localhost:8000/ws/metrics/${simulationId}`);
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    ws.current = new WebSocket(
+      `${protocol}//localhost:8000/ws/metrics/${simulationId}`
+    );
 
     ws.current.onopen = () => {
-      setState((prev) => ({ ...prev, connectionStatus: 'connected' }));
+      setState((prev) => ({ ...prev, connectionStatus: "connected" }));
     };
 
     ws.current.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'metrics_update') {
+        if (data.type === "metrics_update") {
           setState((prev) => ({
             ...prev,
             metrics: data.data,
@@ -62,16 +76,16 @@ export default function Dashboard() {
           }));
         }
       } catch (e) {
-        console.error('Error parsing WebSocket data:', e);
+        console.error("Error parsing WebSocket data:", e);
       }
     };
 
     ws.current.onerror = () => {
-      setState((prev) => ({ ...prev, connectionStatus: 'disconnected' }));
+      setState((prev) => ({ ...prev, connectionStatus: "disconnected" }));
     };
 
     ws.current.onclose = () => {
-      setState((prev) => ({ ...prev, connectionStatus: 'disconnected' }));
+      setState((prev) => ({ ...prev, connectionStatus: "disconnected" }));
     };
   }, []);
 
@@ -79,9 +93,9 @@ export default function Dashboard() {
   const startSimulation = async () => {
     try {
       // Create simulation
-      const createRes = await fetch('http://localhost:8000/simulation/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const createRes = await fetch("http://localhost:8000/simulation/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           traffic_volume: trafficVolume,
           duration,
@@ -103,16 +117,19 @@ export default function Dashboard() {
       connectWebSocket(simId);
 
       // Start simulation
-      const startRes = await fetch(`http://localhost:8000/simulation/${simId}/start`, {
-        method: 'POST',
-      });
+      const startRes = await fetch(
+        `http://localhost:8000/simulation/${simId}/start`,
+        {
+          method: "POST",
+        }
+      );
 
       if (startRes.ok) {
         setState((prev) => ({ ...prev, isRunning: true }));
       }
     } catch (error) {
-      console.error('Error starting simulation:', error);
-      alert('Failed to start simulation');
+      console.error("Error starting simulation:", error);
+      alert("Failed to start simulation");
     }
   };
 
@@ -121,32 +138,60 @@ export default function Dashboard() {
     if (!state.simulation_id) return;
 
     try {
-      await fetch(`http://localhost:8000/simulation/${state.simulation_id}/stop`, {
-        method: 'POST',
-      });
+      await fetch(
+        `http://localhost:8000/simulation/${state.simulation_id}/stop`,
+        {
+          method: "POST",
+        }
+      );
       setState((prev) => ({ ...prev, isRunning: false }));
     } catch (error) {
-      console.error('Error stopping simulation:', error);
+      console.error("Error stopping simulation:", error);
     }
   };
 
   // Reset simulation
-  const resetSimulation = () => {
+  const resetSimulation = async () => {
+  try {
+    // Close WebSocket
     if (ws.current?.readyState === WebSocket.OPEN) {
       ws.current.close();
     }
+
+    // Reset all slice services
+    const slices = [
+      { name: "eMBB", port: 8101 },
+      { name: "URLLC", port: 8102 },
+      { name: "mMTC", port: 8103 },
+    ];
+
+    for (const slice of slices) {
+      try {
+        await fetch(`http://localhost:${slice.port}/reset`, {
+          method: "POST",
+        });
+      } catch (error) {
+        console.error(`Error resetting ${slice.name}:`, error);
+      }
+    }
+
+    // Reset frontend state
     setState({
       simulation_id: null,
       isRunning: false,
       metrics: null,
-      connectionStatus: 'disconnected',
+      connectionStatus: "disconnected",
       metricsHistory: [],
     });
-  };
+  } catch (error) {
+    console.error("Error during reset:", error);
+  }
+};
 
   // Calculate success rate
   const successRate = state.metrics
-    ? ((state.metrics.total_packets_processed - state.metrics.total_packets_dropped) /
+    ? ((state.metrics.total_packets_processed -
+        state.metrics.total_packets_dropped) /
         state.metrics.total_traffic_generated) *
       100
     : 0;
@@ -160,31 +205,64 @@ export default function Dashboard() {
       {/* Animated background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
-        <div className="absolute top-1/2 right-1/3 w-64 h-64 bg-pink-600/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '2s'}}></div>
+        <div
+          className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "1s" }}
+        ></div>
+        <div
+          className="absolute top-1/2 right-1/3 w-64 h-64 bg-pink-600/10 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "2s" }}
+        ></div>
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8 relative z-10">
-        
         {/* Header */}
         <div className="mb-12 animate-fade-in">
           <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
             <div className="flex items-center gap-6">
               <div className="relative">
-                <div className={`w-5 h-5 rounded-full ${state.connectionStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'} shadow-lg`}></div>
-                <div className={`absolute inset-0 w-5 h-5 rounded-full ${state.connectionStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'} animate-ping opacity-75`}></div>
+                <div
+                  className={`w-5 h-5 rounded-full ${
+                    state.connectionStatus === "connected"
+                      ? "bg-emerald-500"
+                      : "bg-red-500"
+                  } shadow-lg`}
+                ></div>
+                <div
+                  className={`absolute inset-0 w-5 h-5 rounded-full ${
+                    state.connectionStatus === "connected"
+                      ? "bg-emerald-500"
+                      : "bg-red-500"
+                  } animate-ping opacity-75`}
+                ></div>
               </div>
               <div>
                 <h1 className="text-4xl md:text-6xl font-black bg-gradient-to-r from-purple-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent tracking-tight">
                   5G Network Slice
                 </h1>
-                <p className="text-lg md:text-xl text-purple-300/80 mt-2 font-light tracking-wide">Real-time eMBB • URLLC • mMTC Monitoring</p>
+                <p className="text-lg md:text-xl text-purple-300/80 mt-2 font-light tracking-wide">
+                  Real-time eMBB • URLLC • mMTC Monitoring
+                </p>
               </div>
             </div>
             <div className="text-right">
-              <div className={`px-6 py-3 rounded-full ${state.connectionStatus === 'connected' ? 'bg-emerald-500/20 border-2 border-emerald-500/50' : 'bg-red-500/20 border-2 border-red-500/50'} backdrop-blur-xl`}>
-                <p className={`text-lg font-bold ${state.connectionStatus === 'connected' ? 'text-emerald-300' : 'text-red-300'}`}>
-                  {state.connectionStatus === 'connected' ? '● CONNECTED' : '● DISCONNECTED'}
+              <div
+                className={`px-6 py-3 rounded-full ${
+                  state.connectionStatus === "connected"
+                    ? "bg-emerald-500/20 border-2 border-emerald-500/50"
+                    : "bg-red-500/20 border-2 border-red-500/50"
+                } backdrop-blur-xl`}
+              >
+                <p
+                  className={`text-lg font-bold ${
+                    state.connectionStatus === "connected"
+                      ? "text-emerald-300"
+                      : "text-red-300"
+                  }`}
+                >
+                  {state.connectionStatus === "connected"
+                    ? "● CONNECTED"
+                    : "● DISCONNECTED"}
                 </p>
               </div>
             </div>
@@ -192,30 +270,34 @@ export default function Dashboard() {
 
           {/* Tabs */}
           <div className="flex gap-4 border-b border-purple-500/20 overflow-x-auto">
-            {(['dashboard', 'analytics', 'history', 'comparison'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-6 py-3 font-semibold capitalize border-b-2 smooth-transition ${
-                  activeTab === tab
-                    ? 'text-purple-400 border-purple-400'
-                    : 'text-slate-400 border-transparent hover:text-slate-300'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+            {(["dashboard", "analytics", "history", "comparison"] as const).map(
+              (tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-6 py-3 font-semibold capitalize border-b-2 smooth-transition ${
+                    activeTab === tab
+                      ? "text-purple-400 border-purple-400"
+                      : "text-slate-400 border-transparent hover:text-slate-300"
+                  }`}
+                >
+                  {tab}
+                </button>
+              )
+            )}
           </div>
         </div>
 
         {/* Dashboard Tab */}
-        {activeTab === 'dashboard' && (
+        {activeTab === "dashboard" && (
           <>
             {/* Control Panel */}
             <div className="bg-slate-900/60 backdrop-blur-2xl border-2 border-purple-500/30 rounded-3xl p-8 mb-12 shadow-2xl shadow-purple-900/50 hover:shadow-purple-700/60 transition-all duration-500">
               <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                 <div className="space-y-3">
-                  <label className="block text-sm font-bold text-purple-300 uppercase tracking-wider">Traffic Volume</label>
+                  <label className="block text-sm font-bold text-purple-300 uppercase tracking-wider">
+                    Traffic Volume
+                  </label>
                   <input
                     type="number"
                     value={trafficVolume}
@@ -225,7 +307,9 @@ export default function Dashboard() {
                   />
                 </div>
                 <div className="space-y-3">
-                  <label className="block text-sm font-bold text-purple-300 uppercase tracking-wider">Duration (sec)</label>
+                  <label className="block text-sm font-bold text-purple-300 uppercase tracking-wider">
+                    Duration (sec)
+                  </label>
                   <input
                     type="number"
                     value={duration}
@@ -235,7 +319,9 @@ export default function Dashboard() {
                   />
                 </div>
                 <div className="space-y-3">
-                  <label className="block text-sm font-bold text-purple-300 uppercase tracking-wider">Pattern</label>
+                  <label className="block text-sm font-bold text-purple-300 uppercase tracking-wider">
+                    Pattern
+                  </label>
                   <select
                     value={pattern}
                     onChange={(e) => setPattern(e.target.value)}
@@ -272,10 +358,10 @@ export default function Dashboard() {
                   </button>
                 </div>
               </div>
-              
+
               {/* Export Buttons */}
               <div className="mt-6 pt-6 border-t border-purple-500/20">
-                <ExportButtons 
+                <ExportButtons
                   simulationId={state.simulation_id}
                   metricsHistory={state.metricsHistory}
                   isEnabled={state.metricsHistory.length > 0}
@@ -290,11 +376,17 @@ export default function Dashboard() {
                 <div className="stat-card bg-gradient-to-br from-violet-600 to-violet-800 border-violet-400/40">
                   <div className="relative z-10">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-black text-violet-200 uppercase tracking-wider">Total Traffic</h3>
+                      <h3 className="text-sm font-black text-violet-200 uppercase tracking-wider">
+                        Total Traffic
+                      </h3>
                       <Activity className="text-violet-300" size={28} />
                     </div>
-                    <p className="text-4xl font-black text-white mb-1">{state.metrics.total_traffic_generated.toLocaleString()}</p>
-                    <p className="text-sm text-violet-300 font-semibold">packets generated</p>
+                    <p className="text-4xl font-black text-white mb-1">
+                      {state.metrics.total_traffic_generated.toLocaleString()}
+                    </p>
+                    <p className="text-sm text-violet-300 font-semibold">
+                      packets generated
+                    </p>
                   </div>
                 </div>
 
@@ -302,11 +394,17 @@ export default function Dashboard() {
                 <div className="stat-card bg-gradient-to-br from-emerald-600 to-emerald-800 border-emerald-400/40">
                   <div className="relative z-10">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-black text-emerald-200 uppercase tracking-wider">Processed</h3>
+                      <h3 className="text-sm font-black text-emerald-200 uppercase tracking-wider">
+                        Processed
+                      </h3>
                       <TrendingUp className="text-emerald-300" size={28} />
                     </div>
-                    <p className="text-4xl font-black text-white mb-1">{state.metrics.total_packets_processed.toLocaleString()}</p>
-                    <p className="text-sm text-emerald-300 font-semibold">packets delivered</p>
+                    <p className="text-4xl font-black text-white mb-1">
+                      {state.metrics.total_packets_processed.toLocaleString()}
+                    </p>
+                    <p className="text-sm text-emerald-300 font-semibold">
+                      packets delivered
+                    </p>
                   </div>
                 </div>
 
@@ -314,11 +412,17 @@ export default function Dashboard() {
                 <div className="stat-card bg-gradient-to-br from-red-600 to-red-800 border-red-400/40">
                   <div className="relative z-10">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-black text-red-200 uppercase tracking-wider">Dropped</h3>
+                      <h3 className="text-sm font-black text-red-200 uppercase tracking-wider">
+                        Dropped
+                      </h3>
                       <Zap className="text-red-300" size={28} />
                     </div>
-                    <p className="text-4xl font-black text-white mb-1">{state.metrics.total_packets_dropped.toLocaleString()}</p>
-                    <p className="text-sm text-red-300 font-semibold">packets lost</p>
+                    <p className="text-4xl font-black text-white mb-1">
+                      {state.metrics.total_packets_dropped.toLocaleString()}
+                    </p>
+                    <p className="text-sm text-red-300 font-semibold">
+                      packets lost
+                    </p>
                   </div>
                 </div>
 
@@ -326,11 +430,17 @@ export default function Dashboard() {
                 <div className="stat-card bg-gradient-to-br from-cyan-600 to-cyan-800 border-cyan-400/40">
                   <div className="relative z-10">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-black text-cyan-200 uppercase tracking-wider">Success Rate</h3>
+                      <h3 className="text-sm font-black text-cyan-200 uppercase tracking-wider">
+                        Success Rate
+                      </h3>
                       <Network className="text-cyan-300" size={28} />
                     </div>
-                    <p className="text-4xl font-black text-white mb-1">{Math.round(successRate)}%</p>
-                    <p className="text-sm text-cyan-300 font-semibold">efficiency</p>
+                    <p className="text-4xl font-black text-white mb-1">
+                      {Math.round(successRate)}%
+                    </p>
+                    <p className="text-sm text-cyan-300 font-semibold">
+                      efficiency
+                    </p>
                   </div>
                 </div>
               </div>
@@ -338,113 +448,401 @@ export default function Dashboard() {
 
             {/* Slice Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              
               {/* eMBB */}
+              {/* eMBB - ENHANCED VERSION */}
               <div className="slice-card bg-gradient-to-br from-blue-600 to-blue-900 border-blue-400/40">
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-8">
                     <div>
-                      <h3 className="text-3xl font-black text-blue-50 tracking-tight">eMBB</h3>
-                      <p className="text-sm text-blue-300 font-semibold mt-1">Enhanced Mobile Broadband</p>
+                      <h3 className="text-3xl font-black text-blue-50 tracking-tight">
+                        eMBB
+                      </h3>
+                      <p className="text-sm text-blue-300 font-semibold mt-1">
+                        Enhanced Mobile Broadband
+                      </p>
                     </div>
                     <div className="bg-blue-500/30 p-4 rounded-2xl backdrop-blur-xl border border-blue-400/30">
                       <Radio size={36} className="text-blue-200" />
                     </div>
                   </div>
-                  
+
                   {embbData ? (
                     <div className="space-y-4">
                       <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-blue-400/30 hover:border-blue-400/60 transition-all duration-300 hover:bg-black/50">
-                        <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-2">Latency Average</p>
-                        <p className="text-3xl font-black text-blue-50">{(embbData.metrics?.latency?.avg || 0).toFixed(1)} <span className="text-xl text-blue-300">ms</span></p>
+                        <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-2">
+                          Latency Average
+                        </p>
+                        <p className="text-3xl font-black text-blue-50">
+                          {(embbData.metrics?.latency?.avg || 0).toFixed(1)}{" "}
+                          <span className="text-xl text-blue-300">ms</span>
+                        </p>
                       </div>
                       <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-blue-400/30 hover:border-blue-400/60 transition-all duration-300 hover:bg-black/50">
-                        <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-2">Throughput Average</p>
-                        <p className="text-3xl font-black text-blue-50">{(embbData.metrics?.throughput?.avg || 0).toFixed(0)} <span className="text-xl text-blue-300">Mbps</span></p>
+                        <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-2">
+                          Throughput Average
+                        </p>
+                        <p className="text-3xl font-black text-blue-50">
+                          {(embbData.metrics?.throughput?.avg || 0).toFixed(0)}{" "}
+                          <span className="text-xl text-blue-300">Mbps</span>
+                        </p>
                       </div>
                       <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-blue-400/30 hover:border-blue-400/60 transition-all duration-300 hover:bg-black/50">
-                        <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-2">QoS Compliance</p>
-                        <p className="text-3xl font-black text-blue-50">{(embbData.qos_compliance_rate || 0).toFixed(1)}<span className="text-xl text-blue-300">%</span></p>
+                        <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-2">
+                          QoS Compliance
+                        </p>
+                        <p className="text-3xl font-black text-blue-50">
+                          {(embbData.qos_compliance_rate || 0).toFixed(1)}
+                          <span className="text-xl text-blue-300">%</span>
+                        </p>
+                      </div>
+
+                      {/* NEW: Queue Status */}
+                      <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-blue-400/30 hover:border-blue-400/60 transition-all duration-300 hover:bg-black/50">
+                        <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-2">
+                          Queue Status
+                        </p>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-lg font-bold text-blue-50">
+                            {embbData.queue_length || 0} / 10000
+                          </span>
+                          <span className="text-sm text-blue-300">
+                            {(
+                              ((embbData.queue_length || 0) / 10000) *
+                              100
+                            ).toFixed(1)}
+                            %
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-500"
+                            style={{
+                              width: `${Math.min(
+                                ((embbData.queue_length || 0) / 10000) * 100,
+                                100
+                              )}%`,
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      {/* NEW: Additional Metrics Grid */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-4 border border-blue-400/30">
+                          <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-1">
+                            Jitter
+                          </p>
+                          <p className="text-2xl font-black text-blue-50">
+                            {(embbData.metrics?.jitter || 0).toFixed(1)}{" "}
+                            <span className="text-sm text-blue-300">ms</span>
+                          </p>
+                        </div>
+                        <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-4 border border-blue-400/30">
+                          <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-1">
+                            QoS Violations
+                          </p>
+                          <p className="text-2xl font-black text-blue-50">
+                            {embbData.qos_violations || 0}
+                          </p>
+                        </div>
+                        <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-4 border border-blue-400/30">
+                          <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-1">
+                            Utilization
+                          </p>
+                          <p className="text-2xl font-black text-blue-50">
+                            {(
+                              (embbData.metrics?.resource_utilization || 0) *
+                              100
+                            ).toFixed(0)}
+                            <span className="text-sm text-blue-300">%</span>
+                          </p>
+                        </div>
+                        <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-4 border border-blue-400/30">
+                          <p className="text-xs text-blue-300 font-bold uppercase tracking-wider mb-1">
+                            Drop Rate
+                          </p>
+                          <p className="text-2xl font-black text-blue-50">
+                            {(embbData.metrics?.drop_rate?.avg || 0).toFixed(2)}
+                            <span className="text-sm text-blue-300">%</span>
+                          </p>
+                        </div>
                       </div>
                     </div>
                   ) : (
                     <div className="text-center py-12">
                       <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-400 border-t-transparent"></div>
-                      <p className="text-blue-300 font-semibold mt-4">Waiting for data...</p>
+                      <p className="text-blue-300 font-semibold mt-4">
+                        Waiting for data...
+                      </p>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* URLLC */}
+              {/* URLLC - ENHANCED VERSION */}
               <div className="slice-card bg-gradient-to-br from-red-600 to-red-900 border-red-400/40">
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-8">
                     <div>
-                      <h3 className="text-3xl font-black text-red-50 tracking-tight">URLLC</h3>
-                      <p className="text-sm text-red-300 font-semibold mt-1">Ultra-Reliable Low Latency</p>
+                      <h3 className="text-3xl font-black text-red-50 tracking-tight">
+                        URLLC
+                      </h3>
+                      <p className="text-sm text-red-300 font-semibold mt-1">
+                        Ultra-Reliable Low Latency
+                      </p>
                     </div>
                     <div className="bg-red-500/30 p-4 rounded-2xl backdrop-blur-xl border border-red-400/30">
                       <Zap size={36} className="text-red-200" />
                     </div>
                   </div>
-                  
+
                   {urllcData ? (
                     <div className="space-y-4">
                       <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-red-400/30 hover:border-red-400/60 transition-all duration-300 hover:bg-black/50">
-                        <p className="text-xs text-red-300 font-bold uppercase tracking-wider mb-2">Latency Average</p>
-                        <p className="text-3xl font-black text-red-50">{(urllcData.metrics?.latency?.avg || 0).toFixed(2)} <span className="text-xl text-red-300">ms</span></p>
+                        <p className="text-xs text-red-300 font-bold uppercase tracking-wider mb-2">
+                          Latency Average
+                        </p>
+                        <p className="text-3xl font-black text-red-50">
+                          {(urllcData.metrics?.latency?.avg || 0).toFixed(2)}{" "}
+                          <span className="text-xl text-red-300">ms</span>
+                        </p>
                       </div>
                       <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-red-400/30 hover:border-red-400/60 transition-all duration-300 hover:bg-black/50">
-                        <p className="text-xs text-red-300 font-bold uppercase tracking-wider mb-2">Reliability Index</p>
-                        <p className="text-3xl font-black text-red-50">{(urllcData.reliability_index || 0).toFixed(2)}<span className="text-xl text-red-300">%</span></p>
+                        <p className="text-xs text-red-300 font-bold uppercase tracking-wider mb-2">
+                          Reliability Index
+                        </p>
+                        <p className="text-3xl font-black text-red-50">
+                          {(urllcData.reliability_index || 0).toFixed(2)}
+                          <span className="text-xl text-red-300">%</span>
+                        </p>
                       </div>
                       <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-red-400/30 hover:border-red-400/60 transition-all duration-300 hover:bg-black/50">
-                        <p className="text-xs text-red-300 font-bold uppercase tracking-wider mb-2">Packets Retransmitted</p>
-                        <p className="text-3xl font-black text-red-50">{urllcData.packets_retransmitted || 0}</p>
+                        <p className="text-xs text-red-300 font-bold uppercase tracking-wider mb-2">
+                          Packets Retransmitted
+                        </p>
+                        <p className="text-3xl font-black text-red-50">
+                          {urllcData.packets_retransmitted || 0}
+                        </p>
+                      </div>
+
+                      {/* NEW: Queue Status */}
+                      <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-red-400/30 hover:border-red-400/60 transition-all duration-300 hover:bg-black/50">
+                        <p className="text-xs text-red-300 font-bold uppercase tracking-wider mb-2">
+                          Queue Status
+                        </p>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-lg font-bold text-red-50">
+                            {urllcData.queue_length || 0} / 5000
+                          </span>
+                          <span className="text-sm text-red-300">
+                            {(
+                              ((urllcData.queue_length || 0) / 5000) *
+                              100
+                            ).toFixed(1)}
+                            %
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-red-400 to-red-600 transition-all duration-500"
+                            style={{
+                              width: `${Math.min(
+                                ((urllcData.queue_length || 0) / 5000) * 100,
+                                100
+                              )}%`,
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      {/* NEW: Additional Metrics */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-4 border border-red-400/30">
+                          <p className="text-xs text-red-300 font-bold uppercase tracking-wider mb-1">
+                            QoS Violations
+                          </p>
+                          <p className="text-2xl font-black text-red-50">
+                            {urllcData.qos_violations || 0}
+                          </p>
+                        </div>
+                        <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-4 border border-red-400/30">
+                          <p className="text-xs text-red-300 font-bold uppercase tracking-wider mb-1">
+                            Success Rate
+                          </p>
+                          <p className="text-2xl font-black text-red-50">
+                            {(urllcData.success_rate || 0).toFixed(1)}
+                            <span className="text-sm text-red-300">%</span>
+                          </p>
+                        </div>
                       </div>
                     </div>
                   ) : (
                     <div className="text-center py-12">
                       <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-red-400 border-t-transparent"></div>
-                      <p className="text-red-300 font-semibold mt-4">Waiting for data...</p>
+                      <p className="text-red-300 font-semibold mt-4">
+                        Waiting for data...
+                      </p>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* mMTC */}
+              {/* mMTC - ENHANCED VERSION */}
               <div className="slice-card bg-gradient-to-br from-emerald-600 to-emerald-900 border-emerald-400/40">
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-8">
                     <div>
-                      <h3 className="text-3xl font-black text-emerald-50 tracking-tight">mMTC</h3>
-                      <p className="text-sm text-emerald-300 font-semibold mt-1">Massive Machine-Type Comms</p>
+                      <h3 className="text-3xl font-black text-emerald-50 tracking-tight">
+                        mMTC
+                      </h3>
+                      <p className="text-sm text-emerald-300 font-semibold mt-1">
+                        Massive Machine-Type Comms
+                      </p>
                     </div>
                     <div className="bg-emerald-500/30 p-4 rounded-2xl backdrop-blur-xl border border-emerald-400/30">
                       <Network size={36} className="text-emerald-200" />
                     </div>
                   </div>
-                  
+
                   {mmtcData ? (
                     <div className="space-y-4">
                       <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-emerald-400/30 hover:border-emerald-400/60 transition-all duration-300 hover:bg-black/50">
-                        <p className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-2">Latency Average</p>
-                        <p className="text-3xl font-black text-emerald-50">{(mmtcData.metrics?.latency?.avg || 0).toFixed(0)} <span className="text-xl text-emerald-300">ms</span></p>
+                        <p className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-2">
+                          Latency Average
+                        </p>
+                        <p className="text-3xl font-black text-emerald-50">
+                          {(mmtcData.metrics?.latency?.avg || 0).toFixed(0)}{" "}
+                          <span className="text-xl text-emerald-300">ms</span>
+                        </p>
                       </div>
                       <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-emerald-400/30 hover:border-emerald-400/60 transition-all duration-300 hover:bg-black/50">
-                        <p className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-2">Active Devices</p>
-                        <p className="text-3xl font-black text-emerald-50">{mmtcData.active_devices || 0}</p>
+                        <p className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-2">
+                          Active Devices
+                        </p>
+                        <p className="text-3xl font-black text-emerald-50">
+                          {mmtcData.active_devices || 0}
+                        </p>
                       </div>
                       <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-emerald-400/30 hover:border-emerald-400/60 transition-all duration-300 hover:bg-black/50">
-                        <p className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-2">Success Rate</p>
-                        <p className="text-3xl font-black text-emerald-50">{(mmtcData.success_rate || 0).toFixed(1)}<span className="text-xl text-emerald-300">%</span></p>
+                        <p className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-2">
+                          Success Rate
+                        </p>
+                        <p className="text-3xl font-black text-emerald-50">
+                          {(mmtcData.success_rate || 0).toFixed(1)}
+                          <span className="text-xl text-emerald-300">%</span>
+                        </p>
+                      </div>
+
+                      {/* NEW: Device Breakdown */}
+                      <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-emerald-400/30 hover:border-emerald-400/60 transition-all duration-300 hover:bg-black/50">
+                        <p className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-3">
+                          Device Breakdown
+                        </p>
+                        {mmtcData.device_distribution && (
+                          <div className="space-y-2">
+                            {Object.entries(mmtcData.device_distribution).map(
+                              ([type, count]) => {
+                                // Narrow the 'unknown' value to number using runtime check
+                                const numericCount =
+                                  typeof count === "number"
+                                    ? count
+                                    : Number(count);
+
+                                const values = Object.values(
+                                  mmtcData.device_distribution
+                                ).map((v) =>
+                                  typeof v === "number" ? v : Number(v)
+                                );
+
+                                const total = values.reduce((a, b) => a + b, 0);
+
+                                const percentage =
+                                  total > 0
+                                    ? ((numericCount / total) * 100).toFixed(1)
+                                    : "0.0";
+
+                                return (
+                                  <div key={type}>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-sm text-emerald-200 capitalize">
+                                        {type}s
+                                      </span>
+                                      <span className="text-sm text-emerald-300 font-bold">
+                                        {numericCount}({percentage}%)
+                                      </span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all duration-500"
+                                        style={{ width: `${percentage}%` }}
+                                      ></div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* NEW: Queue & Aggregation Stats */}
+                      <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-5 border border-emerald-400/30 hover:border-emerald-400/60 transition-all duration-300 hover:bg-black/50">
+                        <p className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-2">
+                          Queue Status
+                        </p>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-lg font-bold text-emerald-50">
+                            {mmtcData.queue_length || 0} / 100000
+                          </span>
+                          <span className="text-sm text-emerald-300">
+                            {(
+                              ((mmtcData.queue_length || 0) / 100000) *
+                              100
+                            ).toFixed(1)}
+                            %
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all duration-500"
+                            style={{
+                              width: `${Math.min(
+                                ((mmtcData.queue_length || 0) / 100000) * 100,
+                                100
+                              )}%`,
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      {/* NEW: Additional Metrics */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-4 border border-emerald-400/30">
+                          <p className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-1">
+                            Aggregated
+                          </p>
+                          <p className="text-2xl font-black text-emerald-50">
+                            {mmtcData.packets_aggregated || 0}
+                          </p>
+                        </div>
+                        <div className="bg-black/40 backdrop-blur-xl rounded-2xl p-4 border border-emerald-400/30">
+                          <p className="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-1">
+                            In Batch
+                          </p>
+                          <p className="text-2xl font-black text-emerald-50">
+                            {mmtcData.devices_in_batch || 0}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   ) : (
                     <div className="text-center py-12">
                       <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-emerald-400 border-t-transparent"></div>
-                      <p className="text-emerald-300 font-semibold mt-4">Waiting for data...</p>
+                      <p className="text-emerald-300 font-semibold mt-4">
+                        Waiting for data...
+                      </p>
                     </div>
                   )}
                 </div>
@@ -454,25 +852,29 @@ export default function Dashboard() {
         )}
 
         {/* Analytics Tab */}
-        {activeTab === 'analytics' && (
+        {activeTab === "analytics" && (
           <div className="space-y-8">
             <div className="card bg-slate-900/60 border-purple-500/30">
-              <h2 className="text-2xl font-bold text-purple-400 mb-6">Performance Charts</h2>
+              <h2 className="text-2xl font-bold text-purple-400 mb-6">
+                Performance Charts
+              </h2>
               <Charts metricsHistory={state.metricsHistory} />
             </div>
           </div>
         )}
 
         {/* History Tab */}
-        {activeTab === 'history' && (
+        {activeTab === "history" && (
           <div className="card bg-slate-900/60 border-purple-500/30">
-            <h2 className="text-2xl font-bold text-purple-400 mb-6">Simulation History</h2>
+            <h2 className="text-2xl font-bold text-purple-400 mb-6">
+              Simulation History
+            </h2>
             <SimulationHistory />
           </div>
         )}
 
         {/* Comparison Tab */}
-        {activeTab === 'comparison' && (
+        {activeTab === "comparison" && (
           <div className="card bg-slate-900/60 border-purple-500/30">
             <ComparisonView />
           </div>
