@@ -1,0 +1,19 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mmtc-hpa
+  namespace: pdc-nsd
+spec:
+  scaleTargetRef: 
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mmtc-slice  # MUST match metadata.name in mmtc-deployment.yaml
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 15

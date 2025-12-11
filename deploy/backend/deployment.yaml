@@ -2,11 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
-  namespace: pdc_backend
+  namespace: pdc-nsd
   labels:
     app: backend
 spec:
-  replicas: 1 # Keep at 1 for state safety
+  replicas: 2
   selector:
     matchLabels:
       app: backend
@@ -16,37 +16,66 @@ spec:
         app: backend
     spec:
       containers:
-      - name: backend
-        image: hamza2dev/5g-core-backend:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8000
-        
-        # Load environment variables from ConfigMap and Secret
-        envFrom:
-        - configMapRef:
-            name: backend-config
-        - secretRef:
-            name: backend-secrets
-            
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
+        - name: backend
+          image: hamza2dev/network-core:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
 
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 15
-          periodSeconds: 5
+          env:
+            - name: DB_HOST
+              value: "backend-db"
+            - name: MYSQL_HOST
+              value: "backend-db"
+
+            - name: SCHEDULER_HOST
+              value: "scheduler"
+            - name: SCHEDULER_PORT
+              value: "8001"
+            # 👇 ADD THESE LINES 👇
+            - name: DB_USER
+              value: "nsd_user"     # Matches MYSQL_USER
+            - name: DB_PASSWORD
+              value: "nsd_pass"     # Matches MYSQL_PASSWORD
+            - name: DB_NAME
+              value: "nsd_db"       # Matches MYSQL_DATABASE
+            # 👆 ---------------- 👆
+
+            # slice + scheduler URLs (inside cluster)
+            - name: SLICE_EMBB_HOST
+              value: "embb-slice"    # <--- CHANGE THIS (was embb_slice)
+            - name: SLICE_URLLC_HOST
+              value: "urllc-slice"   # <--- CHANGE THIS
+            - name: SLICE_MMTC_HOST
+              value: "mmtc-slice"    # <--- CHANGE THIS
+            - name: SCHEDULER_URL
+              value: "http://scheduler:8001"
+
+          # Load DB user / db name / password from ConfigMap + Secret
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secrets
+
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 5

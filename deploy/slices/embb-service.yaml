@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: embb-slice
+  namespace: pdc-nsd
+  labels:
+    app: embb-slice
+spec:
+  # Changed from ClusterIP to LoadBalancer to expose it externally
+  type: ClusterIP
+  selector:
+    app: embb-slice
+  ports:
+  - protocol: TCP
+    port: 8101
+    targetPort: 8101

@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mmtc-slice
+  namespace: pdc-nsd
+  labels:
+    app: mmtc-slice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mmtc-slice
+  template:
+    metadata:
+      labels:
+        app: mmtc-slice
+    spec:
+      containers:
+      - name: mmtc-slice
+        image: hamza2dev/network-mmtc:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8103 # Corrected from 8102 to 8103
+        
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8103
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8103
+          initialDelaySeconds: 15
+          periodSeconds: 5

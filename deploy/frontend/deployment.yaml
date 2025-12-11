@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: pdc-nsd
+  labels:
+    app: frontend
+spec:
+  # Frontend is stateless, so 2 replicas is great for availability!
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        # Ensure this matches the image name you pushed to Docker Hub
+        # Previous step used: hamza2dev/5g-web-dashboard:latest
+        image: hamza2dev/network-frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000 # Corrected to 3000 for React/Next.js dev server
+        
+        # Load environment variables (optional for frontend, depends on your build)
+        envFrom:
+        - configMapRef:
+            name: frontend-config
+            optional: true # Made optional in case you haven't created it yet
+            
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        livenessProbe:
+          httpGet:
+            path: / # Checks if the dashboard loads
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 5

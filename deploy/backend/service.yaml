@@ -2,18 +2,13 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backend
-  namespace: pdc_backend
-  labels:
-    app: backend
+  namespace: pdc-nsd
 spec:
-  type: LoadBalancer
+  type: ClusterIP       # <--- Changed from ClusterIP
   selector:
-    # Matches the label in backend-deployment.yaml
     app: backend
   ports:
-  - name: http
-    protocol: TCP
-    port: 8000        # The port other pods use to access this service
-    targetPort: 8000  # The actual port your container is listening on
-    # nodePort must be between 30000-32767. 
-    nodePort: 30008
+    - port: 8000
+      targetPort: 8000
+       # <--- Fixed port so we know where to send traffic
+      protocol: TCP

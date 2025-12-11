@@ -20,7 +20,7 @@ import json
 from io import StringIO, BytesIO
 
 # Import database and models
-from database import get_db, init_db, test_db_connection, SessionLocal
+from database import get_db, init_db, test_db_connection
 from models import Simulation as SimulationModel, Metrics as MetricsModel, SliceMetrics as SliceMetricsModel
 from schemas import (
     SimulationCreateRequest, SimulationResponse, SimulationHistoryResponse,
@@ -114,15 +114,6 @@ class ConnectionManager:
 sim_manager = SimulationManager()
 conn_manager = ConnectionManager()
 
-# ===================== SLICE HOST MAPPING =====================
-
-# These names must match docker-compose service names
-SLICE_HOSTS = {
-    "embb": "embb_slice",
-    "urllc": "urllc_slice",
-    "mmtc": "mmtc_slice",
-}
-
 # ===================== LIFESPAN EVENT (WITH RETRY) =====================
 
 @asynccontextmanager
@@ -207,7 +198,6 @@ async def create_simulation(
 ):
     """Create a new simulation"""
     try:
-        # FIXED: Use model_dump() instead of dict() for Pydantic V2
         config_dict = request.model_dump()
         logger.info(f"Creating simulation with config: {config_dict}")
         
@@ -227,9 +217,7 @@ async def create_simulation(
         db.commit()
         db.refresh(db_simulation)
         
-        logger.info(f"Simulation {simulation.simulation_id} created successfully")
-        
-        # FIXED: Use model_validate() instead of from_orm()
+        logger.info(f"Created simulation: {simulation.simulation_id}")
         return SimulationResponse.model_validate(db_simulation)
     
     except Exception as e:
@@ -246,7 +234,17 @@ async def start_simulation(
     try:
         simulation = await sim_manager.get_simulation(simulation_id)
         if not simulation:
-            raise HTTPException(status_code=404, detail="Simulation not found")
+            # Try to restore from DB if not in memory (optional improvement)
+            db_sim = db.query(SimulationModel).filter_by(simulation_id=simulation_id).first()
+            if not db_sim:
+                raise HTTPException(status_code=404, detail="Simulation not found")
+            # Reconstruct minimal in-memory object
+            simulation = await sim_manager.create_simulation({
+                "traffic_volume": db_sim.traffic_volume,
+                "duration": db_sim.duration,
+                "pattern": db_sim.pattern
+            })
+            simulation.simulation_id = simulation_id # Reset ID to match DB
         
         simulation.status = SimulationStatus.RUNNING
         simulation.start_time = datetime.now()
@@ -257,6 +255,7 @@ async def start_simulation(
             db_sim.status = SimulationStatus.RUNNING.value
             db_sim.start_time = datetime.now()
             db.commit()
+            db.refresh(db_sim)
         
         # Start simulation task
         task = asyncio.create_task(run_simulation_loop(simulation_id, db))
@@ -264,8 +263,6 @@ async def start_simulation(
         task.add_done_callback(sim_manager.active_tasks.discard)
         
         logger.info(f"Simulation {simulation_id} started")
-        
-        # FIXED: Use model_validate()
         return SimulationResponse.model_validate(db_sim)
     
     except Exception as e:
@@ -289,14 +286,15 @@ async def stop_simulation(
         if db_sim:
             db_sim.status = SimulationStatus.STOPPED.value
             db_sim.end_time = datetime.now()
-            db_sim.total_packets_processed = simulation.total_packets_processed
-            db_sim.total_packets_dropped = simulation.total_packets_dropped
-            db_sim.total_traffic_generated = simulation.total_traffic_generated
+            # Update totals if available in memory
+            if simulation:
+                db_sim.total_packets_processed = simulation.total_packets_processed
+                db_sim.total_packets_dropped = simulation.total_packets_dropped
+                db_sim.total_traffic_generated = simulation.total_traffic_generated
             db.commit()
+            db.refresh(db_sim)
         
         logger.info(f"Simulation {simulation_id} stopped")
-        
-        # FIXED: Use model_validate()
         return SimulationResponse.model_validate(db_sim)
     
     except Exception as e:
@@ -314,7 +312,6 @@ async def get_simulation(
         if not db_sim:
             raise HTTPException(status_code=404, detail="Simulation not found")
         
-        # FIXED: Use model_validate()
         return SimulationResponse.model_validate(db_sim)
     
     except Exception as e:
@@ -373,7 +370,6 @@ async def save_metrics(
         db.commit()
         db.refresh(db_metrics)
         
-        # FIXED: Use model_validate()
         return MetricsResponse.model_validate(db_metrics)
     
     except Exception as e:
@@ -431,7 +427,6 @@ async def save_slice_metrics(
         db.commit()
         db.refresh(db_slice_metrics)
         
-        # FIXED: Use model_validate()
         return SliceMetricsResponse.model_validate(db_slice_metrics)
     
     except Exception as e:
@@ -601,10 +596,11 @@ async def run_simulation_loop(simulation_id: str, db: Session):
                     simulation.total_traffic_generated += traffic_per_cycle
                     
                     # Get metrics from all slices
+                    # ✅ FIXED: Removed hardcoded ports! Now uses config.py values inside the function
                     tasks = [
-                        process_slice_traffic(session, "embb", 8101, traffic_per_cycle // 3),
-                        process_slice_traffic(session, "urllc", 8102, traffic_per_cycle // 3),
-                        process_slice_traffic(session, "mmtc", 8103, traffic_per_cycle // 3)
+                        process_slice_traffic(session, "embb", traffic_per_cycle // 3),
+                        process_slice_traffic(session, "urllc", traffic_per_cycle // 3),
+                        process_slice_traffic(session, "mmtc", traffic_per_cycle // 3)
                     ]
                     
                     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -659,9 +655,19 @@ async def run_simulation_loop(simulation_id: str, db: Session):
     except Exception as e:
         logger.error(f"Fatal error: {e}")
 
-async def process_slice_traffic(session, slice_type: str, port: int, packet_count: int):
+async def process_slice_traffic(session, slice_type: str, packet_count: int):
     """Get metrics from slice"""
     try:
+        # ✅ FIXED: Now gets Host AND Port from config.py!
+        # This will pick up "embb-slice" from K8s env vars, or "localhost" from default
+        service_conf = config.SLICE_SERVICES.get(slice_type)
+        if not service_conf:
+            logger.error(f"No configuration found for slice: {slice_type}")
+            return None
+            
+        host = service_conf["host"]
+        port = service_conf["port"]
+        
         # Generate packets for this slice
         packets = [
             {
@@ -671,12 +677,6 @@ async def process_slice_traffic(session, slice_type: str, port: int, packet_coun
             }
             for i in range(packet_count)
         ]
-        
-        # IMPORTANT: use Docker service name instead of localhost
-        host = SLICE_HOSTS.get(slice_type)
-        if not host:
-            logger.error(f"No host configured for slice_type='{slice_type}'")
-            return None
 
         url = f"http://{host}:{port}/process"
 
@@ -692,6 +692,7 @@ async def process_slice_traffic(session, slice_type: str, port: int, packet_coun
             else:
                 logger.error(f"{slice_type} returned status {resp.status}")
     except Exception as e:
+        # This log will help debugging if it fails again
         logger.error(f"Error from {slice_type} at {url}: {e}")
     return None
 

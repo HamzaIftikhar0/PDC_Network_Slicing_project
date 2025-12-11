@@ -1,0 +1,63 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nsd-ingress
+  namespace: pdc-nsd
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  rules:
+    - host: localhost
+      http:
+        paths:
+          # ================= FRONTEND =================
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
+          
+          # ================= BACKEND =================
+          - path: /backend(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+                  
+          # ================= SCHEDULER =================
+          - path: /scheduler(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: scheduler
+                port:
+                  number: 5000
+
+          # ================= SLICES =================
+          - path: /embb(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: embb-slice   # Ensure your Service yaml matches this
+                port:
+                  number: 8101
+          - path: /urllc(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: urllc-slice
+                port:
+                  number: 8102
+          - path: /mmtc(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: mmtc-slice
+                port:
+                  number: 8103

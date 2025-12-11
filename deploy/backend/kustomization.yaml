@@ -1,9 +1,11 @@
-apiVersion: kustomise.config.k8s.io/v1beta1
+apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+
+namespace: pdc-nsd
+
 resources:
-  - deployment.yaml 
+  - deployment.yaml
   - service.yaml
   - hpa-backend.yaml
-  - configmap.yaml
-  - secret.yaml
-namespace: pdc_backend
+  - configmap.yml
+  - secret.yml

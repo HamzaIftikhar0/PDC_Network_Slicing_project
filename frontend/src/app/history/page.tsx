@@ -34,7 +34,7 @@ export default function HistoryPage() {
     }
 
     // Fetch simulation details
-    fetch(`http://localhost:8000/simulation/${simId}`)
+    fetch(`http://192.168.49.2:30008/simulation/${simId}`)
       .then(res => res.json())
       .then(data => {
         console.log('Simulation details:', data);

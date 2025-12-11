@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - embb-service.yaml
+  - embb-deployment.yaml
+  - embb-hpa.yaml
+  - mmtc-deployment.yaml
+  - mmtc-service.yaml
+  - mmtc-hpa.yaml
+  - urllc-deployment.yaml
+  - urllc-service.yaml
+  - urllc-hpa.yaml
+namespace: pdc-nsd

@@ -13,10 +13,11 @@ class Config:
     """Base configuration"""
     
     # MySQL Database Configuration
+    # We use 'nsd_user' and 'nsd_db' as defaults based on your recent setup
     MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
-    MYSQL_USER = os.getenv("MYSQL_USER", "root")
-    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
-    MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "5g_simulator")
+    MYSQL_USER = os.getenv("MYSQL_USER", "nsd_user")
+    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "nsd_pass")
+    MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "nsd_db")
     MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
     
     # Build database URL for SQLAlchemy
@@ -26,15 +27,28 @@ class Config:
     BACKEND_HOST = os.getenv("BACKEND_HOST", "0.0.0.0")
     BACKEND_PORT = int(os.getenv("BACKEND_PORT", 8000))
     
-    # Slice Services Configuration (ports they run on)
+    # Slice Services Configuration
+    # 👇 UPDATED: Reads env vars for K8s names (e.g., "embb-slice"), defaults to "localhost" for local dev
     SLICE_SERVICES = {
-        "embb": {"host": "localhost", "port": 8101},
-        "urllc": {"host": "localhost", "port": 8102},
-        "mmtc": {"host": "localhost", "port": 8103}
+        "embb": {
+            "host": os.getenv("SLICE_EMBB_HOST", "localhost"),
+            "port": int(os.getenv("SLICE_EMBB_PORT", 8101))
+        },
+        "urllc": {
+            "host": os.getenv("SLICE_URLLC_HOST", "localhost"),
+            "port": int(os.getenv("SLICE_URLLC_PORT", 8102))
+        },
+        "mmtc": {
+            "host": os.getenv("SLICE_MMTC_HOST", "localhost"),
+            "port": int(os.getenv("SLICE_MMTC_PORT", 8103))
+        }
     }
     
     # Scheduler Service Configuration
-    SCHEDULER_SERVICE = {"host": "localhost", "port": 8001}
+    SCHEDULER_SERVICE = {
+        "host": os.getenv("SCHEDULER_HOST", "scheduler"),
+        "port": int(os.getenv("SCHEDULER_PORT", 8001))
+    }
     
     # Application Settings
     APP_NAME = "5G Network Slice Simulator"

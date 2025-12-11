@@ -2,10 +2,10 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: backend-config
-  namespace: pdc_backend
+  namespace: pdc-nsd
 data:
   # Connection details for the backend to find the database
-  MYSQL_HOST: "backend_db"
-  MYSQL_USER: "root"
-  MYSQL_DATABASE: "5g_simulator"
+  MYSQL_HOST: "backend-db"
+  MYSQL_USER: "nsd_user"       # <--- CHANGED from 'root' to match SQL Deployment
+  MYSQL_DATABASE: "nsd_db"     
   BACKEND_PORT: "8000"

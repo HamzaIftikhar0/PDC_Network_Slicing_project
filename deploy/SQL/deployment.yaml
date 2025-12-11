@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sql-database
+  namespace: pdc-nsd
+  labels:
+    app: sql-database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sql-database
+  template:
+    metadata:
+      labels:
+        app: sql-database
+    spec:
+      containers:
+      - name: sql-database
+        image: hamza2dev/network-mysql:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3306
+        # 🔽 Make credentials explicit
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "root123"
+        - name: MYSQL_DATABASE
+          value: "nsd_db"
+        - name: MYSQL_USER
+          value: "nsd_user"
+        - name: MYSQL_PASSWORD
+          value: "nsd_pass"
+        volumeMounts:
+        - name: sql-storage
+          mountPath: /var/lib/mysql
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: sql-storage
+        persistentVolumeClaim:
+          claimName: nsd-database-pvc

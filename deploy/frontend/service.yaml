@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: pdc-nsd
+  labels:
+    app: frontend
+spec:
+  type: ClusterIP
+  selector:
+    # Matches the labels in frontend-deployment.yaml
+    app: frontend
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80          # Expose port 80 on the service (standard HTTP)
+    targetPort: 3000  # Forward to container port 3000 (React/Next.js)

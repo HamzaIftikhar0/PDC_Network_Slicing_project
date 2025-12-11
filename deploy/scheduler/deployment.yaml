@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+  namespace: pdc-nsd
+  labels:
+    app: scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduler
+  template:
+    metadata:
+      labels:
+        app: scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: hamza2dev/network-scheduler:latest
+          imagePullPolicy: Always
+
+          # 🔹 MUST match the port uvicorn is actually using
+          ports:
+            - containerPort: 8001
+
+          env:
+            - name: BACKEND_URL
+              value: "http://backend:8000"
+            - name: SLICE_EMBB_URL
+              value: "http://embb-slice:8101"
+            - name: SLICE_URLLC_URL
+              value: "http://urllc-slice:8102"
+            - name: SLICE_MMTC_URL
+              value: "http://mmtc-slice:8103"
+
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001   # 🔹 changed from 5000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001   # 🔹 changed from 5000
+            initialDelaySeconds: 15
+            periodSeconds: 5
