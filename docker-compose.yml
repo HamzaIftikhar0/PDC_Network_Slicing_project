@@ -189,7 +189,7 @@ services:
       dockerfile: Dockerfile
     container_name: "frontend_cont"
     working_dir: /app
-    command: ["npm", "run", "dev"]
+    command: sh -c "npm install && npm run dev"
     ports:
       - "3000:3000"
     restart: always
